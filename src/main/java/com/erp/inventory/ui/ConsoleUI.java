@@ -4,8 +4,8 @@ import com.erp.inventory.dao.SupplierDAO;
 import com.erp.inventory.dao.impl.SupplierDAOImpl;
 import com.erp.inventory.model.Supplier;
 import com.erp.inventory.model.Product;
-import com.erp.inventory.model.Transaction;
 import com.erp.inventory.model.TransactionType;
+import com.erp.inventory.service.ProductService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,13 +24,15 @@ public class ConsoleUI {
     private Scanner scanner;
     private boolean running;
     
-    // DAO instances
+    // DAO instances and Services
     private final SupplierDAO supplierDAO;
+    private final ProductService productService;
 
     public ConsoleUI() {
         this.scanner = new Scanner(System.in);
         this.running = true;
         this.supplierDAO = new SupplierDAOImpl();
+        this.productService = new ProductService();
     }
 
     /**
@@ -486,12 +488,6 @@ public class ConsoleUI {
         System.out.println("Created: " + supplier.getCreatedDate());
         System.out.println("Updated: " + supplier.getUpdatedDate());
     }
-    
-    private String truncateString(String str, int maxLength) {
-        if (str == null) return "";
-        if (str.length() <= maxLength) return str;
-        return str.substring(0, maxLength - 3) + "...";
-    }
 
     private void manageProducts() {
         boolean back = false;
@@ -719,36 +715,497 @@ public class ConsoleUI {
     
     private void addProduct() {
         System.out.println("\n--- Add New Product ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will add a product with supplier linkage.");
+        
+        try {
+            // Get all suppliers for selection
+            List<Supplier> suppliers = productService.getAllSuppliers();
+            if (suppliers.isEmpty()) {
+                System.out.println("No suppliers available. Please add suppliers first.");
+                pauseForUser();
+                return;
+            }
+            
+            // Get product details from user
+            System.out.print("Enter product name: ");
+            String productName = scanner.nextLine().trim();
+            if (productName.isEmpty()) {
+                System.out.println("Product name is required.");
+                pauseForUser();
+                return;
+            }
+            
+            System.out.print("Enter product code (optional): ");
+            String productCode = scanner.nextLine().trim();
+            if (productCode.isEmpty()) {
+                productCode = null;
+            }
+            
+            System.out.print("Enter category: ");
+            String category = scanner.nextLine().trim();
+            if (category.isEmpty()) {
+                System.out.println("Category is required.");
+                pauseForUser();
+                return;
+            }
+            
+            System.out.print("Enter description (optional): ");
+            String description = scanner.nextLine().trim();
+            if (description.isEmpty()) {
+                description = null;
+            }
+            
+            // Get unit price
+            BigDecimal unitPrice;
+            while (true) {
+                try {
+                    System.out.print("Enter unit price: $");
+                    String priceInput = scanner.nextLine().trim();
+                    unitPrice = new BigDecimal(priceInput);
+                    if (unitPrice.compareTo(BigDecimal.ZERO) < 0) {
+                        System.out.println("Unit price cannot be negative.");
+                        continue;
+                    }
+                    break;
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid price format. Please enter a valid number.");
+                }
+            }
+            
+            // Get stock quantity
+            Integer stockQuantity;
+            while (true) {
+                try {
+                    System.out.print("Enter initial stock quantity: ");
+                    String stockInput = scanner.nextLine().trim();
+                    stockQuantity = Integer.parseInt(stockInput);
+                    if (stockQuantity < 0) {
+                        System.out.println("Stock quantity cannot be negative.");
+                        continue;
+                    }
+                    break;
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid quantity format. Please enter a valid integer.");
+                }
+            }
+            
+            // Get reorder level
+            Integer reorderLevel;
+            while (true) {
+                try {
+                    System.out.print("Enter reorder level (default 10): ");
+                    String reorderInput = scanner.nextLine().trim();
+                    if (reorderInput.isEmpty()) {
+                        reorderLevel = 10;
+                        break;
+                    }
+                    reorderLevel = Integer.parseInt(reorderInput);
+                    if (reorderLevel < 0) {
+                        System.out.println("Reorder level cannot be negative.");
+                        continue;
+                    }
+                    break;
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid reorder level format. Please enter a valid integer.");
+                }
+            }
+            
+            // Display suppliers for selection
+            System.out.println("\nAvailable Suppliers:");
+            System.out.println("---------------------");
+            for (int i = 0; i < suppliers.size(); i++) {
+                Supplier supplier = suppliers.get(i);
+                System.out.printf("%d. %s (Rating: %.1f)\n", 
+                    i + 1, supplier.getCompanyName(), 
+                    supplier.getRating() != null ? supplier.getRating() : 0.0);
+            }
+            
+            // Get supplier selection
+            Integer selectedSupplierId = null;
+            while (selectedSupplierId == null) {
+                try {
+                    System.out.print("Select supplier (enter number): ");
+                    String supplierInput = scanner.nextLine().trim();
+                    int supplierChoice = Integer.parseInt(supplierInput);
+                    if (supplierChoice < 1 || supplierChoice > suppliers.size()) {
+                        System.out.println("Invalid supplier selection. Please choose a number between 1 and " + suppliers.size());
+                        continue;
+                    }
+                    selectedSupplierId = suppliers.get(supplierChoice - 1).getSupplierId();
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid input. Please enter a valid number.");
+                }
+            }
+            
+            // Create the product
+            Product newProduct = productService.createProduct(
+                productName, productCode, category, description, 
+                unitPrice, stockQuantity, reorderLevel, selectedSupplierId
+            );
+            
+            System.out.println("\n✓ Product added successfully!");
+            System.out.println("Product ID: " + newProduct.getProductId());
+            System.out.println("Product Name: " + newProduct.getProductName());
+            if (newProduct.getProductCode() != null) {
+                System.out.println("Product Code: " + newProduct.getProductCode());
+            }
+            System.out.println("Category: " + newProduct.getCategory());
+            System.out.println("Unit Price: $" + newProduct.getUnitPrice());
+            System.out.println("Stock Quantity: " + newProduct.getStockQuantity());
+            System.out.println("Reorder Level: " + newProduct.getReorderLevel());
+            
+            // Display supplier info
+            final Integer finalSupplierId = selectedSupplierId;
+            Optional<Supplier> selectedSupplier = suppliers.stream()
+                .filter(s -> s.getSupplierId().equals(finalSupplierId))
+                .findFirst();
+            if (selectedSupplier.isPresent()) {
+                System.out.println("Supplier: " + selectedSupplier.get().getCompanyName());
+            }
+            
+        } catch (ProductService.ValidationException e) {
+            System.out.println("\n❌ Validation Error: " + e.getMessage());
+        } catch (SQLException e) {
+            logger.error("Database error adding product", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error adding product", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
     private void viewAllProducts() {
         System.out.println("\n--- All Products ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will show all products with supplier information.");
+        
+        try {
+            List<Product> products = productService.findAllProducts();
+            if (products.isEmpty()) {
+                System.out.println("No products found.");
+            } else {
+                System.out.println("\nFound " + products.size() + " product(s):\n");
+                displayProductsTable(products);
+            }
+        } catch (SQLException e) {
+            logger.error("Database error viewing products", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error viewing products", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
     private void searchProducts() {
         System.out.println("\n--- Search Products ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will search products by name, code, or category.");
+        System.out.println("1. Search by Name");
+        System.out.println("2. Search by Category");
+        System.out.println("3. Search by Product Code");
+        System.out.println("4. Search by Supplier");
+        System.out.print("\nChoose search type (1-4): ");
+        
+        try {
+            int searchType = Integer.parseInt(scanner.nextLine().trim());
+            List<Product> products = null;
+            
+            switch (searchType) {
+                case 1:
+                    System.out.print("Enter product name (partial match): ");
+                    String name = scanner.nextLine().trim();
+                    products = productService.searchProductsByName(name);
+                    break;
+                    
+                case 2:
+                    System.out.print("Enter category: ");
+                    String category = scanner.nextLine().trim();
+                    products = productService.findProductsByCategory(category);
+                    break;
+                    
+                case 3:
+                    System.out.print("Enter product code: ");
+                    String code = scanner.nextLine().trim();
+                    Product product = productService.findProductByCode(code);
+                    products = product != null ? List.of(product) : List.of();
+                    break;
+                    
+                case 4:
+                    // Show suppliers first
+                    List<Supplier> suppliers = productService.getAllSuppliers();
+                    if (suppliers.isEmpty()) {
+                        System.out.println("No suppliers available.");
+                        pauseForUser();
+                        return;
+                    }
+                    
+                    System.out.println("\nAvailable Suppliers:");
+                    for (int i = 0; i < suppliers.size(); i++) {
+                        Supplier supplier = suppliers.get(i);
+                        System.out.printf("%d. %s\n", i + 1, supplier.getCompanyName());
+                    }
+                    
+                    System.out.print("Select supplier (enter number): ");
+                    int supplierChoice = Integer.parseInt(scanner.nextLine().trim());
+                    if (supplierChoice < 1 || supplierChoice > suppliers.size()) {
+                        System.out.println("Invalid supplier selection.");
+                        pauseForUser();
+                        return;
+                    }
+                    
+                    Integer supplierId = suppliers.get(supplierChoice - 1).getSupplierId();
+                    products = productService.findProductsBySupplier(supplierId);
+                    break;
+                    
+                default:
+                    System.out.println("Invalid search type.");
+                    pauseForUser();
+                    return;
+            }
+            
+            if (products != null) {
+                if (products.isEmpty()) {
+                    System.out.println("\nNo products found matching the search criteria.");
+                } else {
+                    System.out.println("\nFound " + products.size() + " product(s):\n");
+                    displayProductsTable(products);
+                }
+            }
+            
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid input. Please enter a valid number.");
+        } catch (SQLException e) {
+            logger.error("Database error searching products", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error searching products", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
     private void updateProduct() {
         System.out.println("\n--- Update Product ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will update product information and pricing.");
+        
+        try {
+            System.out.print("Enter Product ID to update: ");
+            String productIdInput = scanner.nextLine().trim();
+            Integer productId = Integer.parseInt(productIdInput);
+            
+            Optional<Product> productOpt = productService.findProductById(productId);
+            if (!productOpt.isPresent()) {
+                System.out.println("Product not found with ID: " + productId);
+                pauseForUser();
+                return;
+            }
+            
+            Product existingProduct = productOpt.get();
+            System.out.println("\nCurrent Product Details:");
+            System.out.println("Name: " + existingProduct.getProductName());
+            System.out.println("Code: " + (existingProduct.getProductCode() != null ? existingProduct.getProductCode() : "N/A"));
+            System.out.println("Category: " + existingProduct.getCategory());
+            System.out.println("Price: $" + existingProduct.getUnitPrice());
+            System.out.println("Stock: " + existingProduct.getStockQuantity());
+            System.out.println("Reorder Level: " + existingProduct.getReorderLevel());
+            
+            System.out.println("\nEnter new values (press Enter to keep current value):");
+            
+            // Update product name
+            System.out.print("Product name [" + existingProduct.getProductName() + "]: ");
+            String productName = scanner.nextLine().trim();
+            if (productName.isEmpty()) {
+                productName = existingProduct.getProductName();
+            }
+            
+            // Update product code
+            System.out.print("Product code [" + (existingProduct.getProductCode() != null ? existingProduct.getProductCode() : "N/A") + "]: ");
+            String productCode = scanner.nextLine().trim();
+            if (productCode.isEmpty()) {
+                productCode = existingProduct.getProductCode();
+            }
+            
+            // Update category
+            System.out.print("Category [" + existingProduct.getCategory() + "]: ");
+            String category = scanner.nextLine().trim();
+            if (category.isEmpty()) {
+                category = existingProduct.getCategory();
+            }
+            
+            // Update description
+            System.out.print("Description [" + (existingProduct.getDescription() != null ? existingProduct.getDescription() : "N/A") + "]: ");
+            String description = scanner.nextLine().trim();
+            if (description.isEmpty()) {
+                description = existingProduct.getDescription();
+            }
+            
+            // Update unit price
+            BigDecimal unitPrice;
+            while (true) {
+                System.out.print("Unit price [$" + existingProduct.getUnitPrice() + "]: ");
+                String priceInput = scanner.nextLine().trim();
+                if (priceInput.isEmpty()) {
+                    unitPrice = existingProduct.getUnitPrice();
+                    break;
+                }
+                try {
+                    unitPrice = new BigDecimal(priceInput);
+                    if (unitPrice.compareTo(BigDecimal.ZERO) < 0) {
+                        System.out.println("Unit price cannot be negative.");
+                        continue;
+                    }
+                    break;
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid price format. Please enter a valid number.");
+                }
+            }
+            
+            // Update stock quantity
+            Integer stockQuantity;
+            while (true) {
+                System.out.print("Stock quantity [" + existingProduct.getStockQuantity() + "]: ");
+                String stockInput = scanner.nextLine().trim();
+                if (stockInput.isEmpty()) {
+                    stockQuantity = existingProduct.getStockQuantity();
+                    break;
+                }
+                try {
+                    stockQuantity = Integer.parseInt(stockInput);
+                    if (stockQuantity < 0) {
+                        System.out.println("Stock quantity cannot be negative.");
+                        continue;
+                    }
+                    break;
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid quantity format. Please enter a valid integer.");
+                }
+            }
+            
+            // Update reorder level
+            Integer reorderLevel;
+            while (true) {
+                System.out.print("Reorder level [" + existingProduct.getReorderLevel() + "]: ");
+                String reorderInput = scanner.nextLine().trim();
+                if (reorderInput.isEmpty()) {
+                    reorderLevel = existingProduct.getReorderLevel();
+                    break;
+                }
+                try {
+                    reorderLevel = Integer.parseInt(reorderInput);
+                    if (reorderLevel < 0) {
+                        System.out.println("Reorder level cannot be negative.");
+                        continue;
+                    }
+                    break;
+                } catch (NumberFormatException e) {
+                    System.out.println("Invalid reorder level format. Please enter a valid integer.");
+                }
+            }
+            
+            // Show suppliers and allow change
+            List<Supplier> suppliers = productService.getAllSuppliers();
+            Integer supplierId = existingProduct.getSupplierId();
+            
+            System.out.println("\nCurrent supplier: " + existingProduct.getSupplierName());
+            System.out.print("Change supplier? (y/N): ");
+            String changeSupplier = scanner.nextLine().trim().toLowerCase();
+            
+            if ("y".equals(changeSupplier) || "yes".equals(changeSupplier)) {
+                System.out.println("\nAvailable Suppliers:");
+                for (int i = 0; i < suppliers.size(); i++) {
+                    Supplier supplier = suppliers.get(i);
+                    System.out.printf("%d. %s\n", i + 1, supplier.getCompanyName());
+                }
+                
+                while (true) {
+                    try {
+                        System.out.print("Select supplier (enter number): ");
+                        String supplierInput = scanner.nextLine().trim();
+                        int supplierChoice = Integer.parseInt(supplierInput);
+                        if (supplierChoice < 1 || supplierChoice > suppliers.size()) {
+                            System.out.println("Invalid supplier selection.");
+                            continue;
+                        }
+                        supplierId = suppliers.get(supplierChoice - 1).getSupplierId();
+                        break;
+                    } catch (NumberFormatException e) {
+                        System.out.println("Invalid input. Please enter a valid number.");
+                    }
+                }
+            }
+            
+            // Update the product
+            Product updatedProduct = productService.updateProduct(
+                productId, productName, productCode, category, description,
+                unitPrice, stockQuantity, reorderLevel, supplierId
+            );
+            
+            System.out.println("\n✓ Product updated successfully!");
+            System.out.println("Product ID: " + updatedProduct.getProductId());
+            System.out.println("Product Name: " + updatedProduct.getProductName());
+            
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid Product ID format. Please enter a valid number.");
+        } catch (ProductService.ValidationException e) {
+            System.out.println("\n❌ Validation Error: " + e.getMessage());
+        } catch (SQLException e) {
+            logger.error("Database error updating product", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error updating product", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
     private void deleteProduct() {
         System.out.println("\n--- Delete Product ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will safely delete products (soft delete).");
+        
+        try {
+            System.out.print("Enter Product ID to delete: ");
+            String productIdInput = scanner.nextLine().trim();
+            Integer productId = Integer.parseInt(productIdInput);
+            
+            Optional<Product> productOpt = productService.findProductById(productId);
+            if (!productOpt.isPresent()) {
+                System.out.println("Product not found with ID: " + productId);
+                pauseForUser();
+                return;
+            }
+            
+            Product product = productOpt.get();
+            System.out.println("\nProduct Details:");
+            System.out.println("Name: " + product.getProductName());
+            System.out.println("Code: " + (product.getProductCode() != null ? product.getProductCode() : "N/A"));
+            System.out.println("Category: " + product.getCategory());
+            System.out.println("Stock Quantity: " + product.getStockQuantity());
+            
+            System.out.print("\nAre you sure you want to delete this product? (y/N): ");
+            String confirmation = scanner.nextLine().trim().toLowerCase();
+            
+            if ("y".equals(confirmation) || "yes".equals(confirmation)) {
+                boolean deleted = productService.deleteProduct(productId);
+                if (deleted) {
+                    System.out.println("\n✓ Product deleted successfully!");
+                } else {
+                    System.out.println("\n❌ Failed to delete product.");
+                }
+            } else {
+                System.out.println("\nProduct deletion cancelled.");
+            }
+            
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid Product ID format. Please enter a valid number.");
+        } catch (ProductService.ValidationException e) {
+            System.out.println("\n❌ Validation Error: " + e.getMessage());
+        } catch (SQLException e) {
+            logger.error("Database error deleting product", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error deleting product", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
@@ -773,15 +1230,77 @@ public class ConsoleUI {
     
     private void generateStockSummaryReport() {
         System.out.println("\n--- Stock Summary Report ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will show current stock levels and values for all products.");
+        
+        try {
+            List<Product> products = productService.findAllProducts();
+            if (products.isEmpty()) {
+                System.out.println("No products found.");
+            } else {
+                System.out.println("\nStock Summary for " + products.size() + " product(s):\n");
+                
+                BigDecimal totalStockValue = BigDecimal.ZERO;
+                displayProductsTable(products);
+                
+                // Calculate total stock value
+                for (Product product : products) {
+                    BigDecimal productValue = product.getUnitPrice().multiply(new BigDecimal(product.getStockQuantity()));
+                    totalStockValue = totalStockValue.add(productValue);
+                }
+                
+                System.out.println("\n" + "=".repeat(100));
+                System.out.printf("Total Stock Value: $%.2f%n", totalStockValue);
+                System.out.println("Total Products: " + products.size());
+            }
+        } catch (SQLException e) {
+            logger.error("Database error generating stock summary report", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error generating stock summary report", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
     private void generateLowStockReport() {
         System.out.println("\n--- Low Stock Alert Report ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will show products that are below reorder level.");
+        
+        try {
+            List<Product> lowStockProducts = productService.getLowStockProducts();
+            if (lowStockProducts.isEmpty()) {
+                System.out.println("\n✓ No products are below reorder level.");
+            } else {
+                System.out.println("\n⚠️  Found " + lowStockProducts.size() + " product(s) below reorder level:\n");
+                
+                // Display low stock products with additional warning info
+                System.out.printf("%-5s %-25s %-15s %-10s %-10s %-15s %-20s%n",
+                    "ID", "Product Name", "Code", "Stock", "Reorder", "Shortage", "Supplier");
+                System.out.println("=".repeat(100));
+                
+                for (Product product : lowStockProducts) {
+                    int shortage = Math.max(0, product.getReorderLevel() - product.getStockQuantity());
+                    String status = product.getStockQuantity() == 0 ? "OUT OF STOCK" : "LOW STOCK";
+                    
+                    System.out.printf("%-5d %-25s %-15s %-10d %-10d %-15s %-20s%n",
+                        product.getProductId(),
+                        truncateString(product.getProductName(), 24),
+                        product.getProductCode() != null ? truncateString(product.getProductCode(), 14) : "N/A",
+                        product.getStockQuantity(),
+                        product.getReorderLevel(),
+                        shortage > 0 ? shortage + " units" : status,
+                        product.getSupplierName() != null ? truncateString(product.getSupplierName(), 19) : "N/A");
+                }
+                
+                System.out.println("\n⚠️  Immediate action required for these products!");
+            }
+        } catch (SQLException e) {
+            logger.error("Database error generating low stock report", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error generating low stock report", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
@@ -833,8 +1352,60 @@ public class ConsoleUI {
 
     private void generateValuationReport() {
         System.out.println("\n--- Inventory Valuation Report ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will calculate total inventory value and breakdown by category.");
+        
+        try {
+            List<Product> products = productService.findAllProducts();
+            if (products.isEmpty()) {
+                System.out.println("No products found.");
+            } else {
+                System.out.println("\nInventory Valuation for " + products.size() + " product(s):\n");
+                
+                // Group by category and calculate values
+                java.util.Map<String, java.util.List<Product>> productsByCategory = new java.util.HashMap<>();
+                for (Product product : products) {
+                    productsByCategory.computeIfAbsent(product.getCategory(), k -> new java.util.ArrayList<>()).add(product);
+                }
+                
+                BigDecimal totalInventoryValue = BigDecimal.ZERO;
+                
+                System.out.printf("%-20s %-10s %-15s %-15s%n", "Category", "Items", "Total Units", "Total Value");
+                System.out.println("=".repeat(65));
+                
+                for (java.util.Map.Entry<String, java.util.List<Product>> entry : productsByCategory.entrySet()) {
+                    String category = entry.getKey();
+                    java.util.List<Product> categoryProducts = entry.getValue();
+                    
+                    int totalUnits = 0;
+                    BigDecimal categoryValue = BigDecimal.ZERO;
+                    
+                    for (Product product : categoryProducts) {
+                        totalUnits += product.getStockQuantity();
+                        BigDecimal productValue = product.getUnitPrice().multiply(new BigDecimal(product.getStockQuantity()));
+                        categoryValue = categoryValue.add(productValue);
+                    }
+                    
+                    totalInventoryValue = totalInventoryValue.add(categoryValue);
+                    
+                    System.out.printf("%-20s %-10d %-15d $%-14.2f%n",
+                        truncateString(category, 19),
+                        categoryProducts.size(),
+                        totalUnits,
+                        categoryValue);
+                }
+                
+                System.out.println("=".repeat(65));
+                System.out.printf("Total Inventory Value: $%.2f%n", totalInventoryValue);
+                System.out.println("Total Product Types: " + products.size());
+                System.out.println("Categories: " + productsByCategory.size());
+            }
+        } catch (SQLException e) {
+            logger.error("Database error generating valuation report", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error generating valuation report", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
@@ -842,22 +1413,177 @@ public class ConsoleUI {
     
     private void viewCurrentStock() {
         System.out.println("\n--- Current Stock Levels ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will show current stock quantities for all products.");
+        
+        try {
+            List<Product> products = productService.findAllProducts();
+            if (products.isEmpty()) {
+                System.out.println("No products found.");
+            } else {
+                System.out.println("\nCurrent stock levels for " + products.size() + " product(s):\n");
+                displayProductsTable(products);
+                
+                // Show summary statistics
+                int totalProducts = products.size();
+                long totalUnits = products.stream().mapToInt(Product::getStockQuantity).sum();
+                long lowStockCount = products.stream().mapToInt(p -> p.getStockQuantity() <= p.getReorderLevel() ? 1 : 0).sum();
+                long outOfStockCount = products.stream().mapToInt(p -> p.getStockQuantity() == 0 ? 1 : 0).sum();
+                
+                System.out.println("\n" + "=".repeat(115));
+                System.out.println("Summary:");
+                System.out.println("Total Products: " + totalProducts);
+                System.out.println("Total Units in Stock: " + totalUnits);
+                System.out.println("Low Stock Items: " + lowStockCount);
+                System.out.println("Out of Stock Items: " + outOfStockCount);
+                
+                if (lowStockCount > 0) {
+                    System.out.println("\n⚠️  Warning: " + lowStockCount + " product(s) need restocking!");
+                }
+                if (outOfStockCount > 0) {
+                    System.out.println("❌ Critical: " + outOfStockCount + " product(s) are out of stock!");
+                }
+            }
+        } catch (SQLException e) {
+            logger.error("Database error viewing current stock", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error viewing current stock", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
     private void checkLowStockAlerts() {
         System.out.println("\n--- Low Stock Alerts ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will identify products that need immediate restocking.");
+        
+        try {
+            List<Product> lowStockProducts = productService.getLowStockProducts();
+            if (lowStockProducts.isEmpty()) {
+                System.out.println("\n✓ No low stock alerts. All products are adequately stocked.");
+            } else {
+                System.out.println("\n⚠️  ALERT: " + lowStockProducts.size() + " product(s) require immediate attention!\n");
+                
+                // Separate critical (out of stock) from low stock
+                java.util.List<Product> outOfStock = new java.util.ArrayList<>();
+                java.util.List<Product> lowStock = new java.util.ArrayList<>();
+                
+                for (Product product : lowStockProducts) {
+                    if (product.getStockQuantity() == 0) {
+                        outOfStock.add(product);
+                    } else {
+                        lowStock.add(product);
+                    }
+                }
+                
+                if (!outOfStock.isEmpty()) {
+                    System.out.println("❌ CRITICAL - OUT OF STOCK (" + outOfStock.size() + " items):");
+                    System.out.println("-".repeat(60));
+                    for (Product product : outOfStock) {
+                        System.out.printf("• %s [Code: %s] - Supplier: %s\n",
+                            product.getProductName(),
+                            product.getProductCode() != null ? product.getProductCode() : "N/A",
+                            product.getSupplierName() != null ? product.getSupplierName() : "N/A");
+                    }
+                    System.out.println();
+                }
+                
+                if (!lowStock.isEmpty()) {
+                    System.out.println("⚠️  LOW STOCK (" + lowStock.size() + " items):");
+                    System.out.println("-".repeat(60));
+                    for (Product product : lowStock) {
+                        int shortage = product.getReorderLevel() - product.getStockQuantity();
+                        System.out.printf("• %s [Code: %s] - Stock: %d, Reorder: %d (Need: %d) - Supplier: %s\n",
+                            product.getProductName(),
+                            product.getProductCode() != null ? product.getProductCode() : "N/A",
+                            product.getStockQuantity(),
+                            product.getReorderLevel(),
+                            shortage,
+                            product.getSupplierName() != null ? product.getSupplierName() : "N/A");
+                    }
+                }
+                
+                System.out.println("\nℹ️  Recommendation: Contact suppliers and place orders for the above products.");
+            }
+        } catch (SQLException e) {
+            logger.error("Database error checking low stock alerts", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error checking low stock alerts", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
     private void generateReorderList() {
         System.out.println("\n--- Generate Reorder List ---");
-        System.out.println("Note: Product DAO not yet implemented.");
-        System.out.println("This will create a purchase order list for low stock items.");
+        
+        try {
+            List<Product> lowStockProducts = productService.getLowStockProducts();
+            if (lowStockProducts.isEmpty()) {
+                System.out.println("\n✓ No products need reordering at this time.");
+            } else {
+                System.out.println("\n📋 Reorder List for " + lowStockProducts.size() + " product(s):\n");
+                
+                // Group by supplier for easier ordering
+                java.util.Map<String, java.util.List<Product>> productsBySupplier = new java.util.LinkedHashMap<>();
+                for (Product product : lowStockProducts) {
+                    String supplierName = product.getSupplierName() != null ? product.getSupplierName() : "Unknown Supplier";
+                    productsBySupplier.computeIfAbsent(supplierName, k -> new java.util.ArrayList<>()).add(product);
+                }
+                
+                BigDecimal totalOrderValue = BigDecimal.ZERO;
+                
+                for (java.util.Map.Entry<String, java.util.List<Product>> entry : productsBySupplier.entrySet()) {
+                    String supplierName = entry.getKey();
+                    java.util.List<Product> supplierProducts = entry.getValue();
+                    
+                    System.out.println("★ SUPPLIER: " + supplierName);
+                    System.out.println("=".repeat(80));
+                    System.out.printf("%-30s %-15s %-10s %-12s %-15s%n",
+                        "Product Name", "Code", "Current", "Suggested", "Est. Cost");
+                    System.out.println("-".repeat(80));
+                    
+                    BigDecimal supplierOrderValue = BigDecimal.ZERO;
+                    
+                    for (Product product : supplierProducts) {
+                        // Calculate suggested order quantity (bring to 150% of reorder level)
+                        int suggestedQuantity = Math.max(
+                            product.getReorderLevel() - product.getStockQuantity(),
+                            (int)(product.getReorderLevel() * 1.5) - product.getStockQuantity()
+                        );
+                        
+                        BigDecimal estimatedCost = product.getUnitPrice().multiply(new BigDecimal(suggestedQuantity));
+                        supplierOrderValue = supplierOrderValue.add(estimatedCost);
+                        
+                        System.out.printf("%-30s %-15s %-10d %-12d $%-14.2f%n",
+                            truncateString(product.getProductName(), 29),
+                            product.getProductCode() != null ? truncateString(product.getProductCode(), 14) : "N/A",
+                            product.getStockQuantity(),
+                            suggestedQuantity,
+                            estimatedCost);
+                    }
+                    
+                    System.out.printf("\nSubtotal for %s: $%.2f\n\n", supplierName, supplierOrderValue);
+                    totalOrderValue = totalOrderValue.add(supplierOrderValue);
+                }
+                
+                System.out.println("=".repeat(80));
+                System.out.printf("TOTAL ESTIMATED ORDER VALUE: $%.2f%n", totalOrderValue);
+                System.out.println("Total Products to Reorder: " + lowStockProducts.size());
+                System.out.println("Suppliers to Contact: " + productsBySupplier.size());
+                
+                System.out.println("\nℹ️  Note: Suggested quantities bring stock to 150% of reorder level.");
+                System.out.println("ℹ️  Adjust quantities based on supplier minimums and business needs.");
+            }
+        } catch (SQLException e) {
+            logger.error("Database error generating reorder list", e);
+            System.out.println("\n❌ Database error: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error generating reorder list", e);
+            System.out.println("\n❌ Unexpected error: " + e.getMessage());
+        }
+        
         pauseForUser();
     }
 
@@ -873,6 +1599,43 @@ public class ConsoleUI {
         System.out.println("Note: Product DAO not yet implemented.");
         System.out.println("This will perform a comprehensive stock audit and variance analysis.");
         pauseForUser();
+    }
+
+    /**
+     * Display products in a formatted table
+     */
+    private void displayProductsTable(List<Product> products) {
+        if (products.isEmpty()) {
+            System.out.println("No products to display.");
+            return;
+        }
+        
+        // Print header
+        System.out.printf("%-5s %-25s %-15s %-15s %-10s %-10s %-10s %-20s%n",
+            "ID", "Product Name", "Code", "Category", "Price", "Stock", "Reorder", "Supplier");
+        System.out.println("=".repeat(115));
+        
+        // Print product data
+        for (Product product : products) {
+            System.out.printf("%-5d %-25s %-15s %-15s $%-9.2f %-10d %-10d %-20s%n",
+                product.getProductId(),
+                truncateString(product.getProductName(), 24),
+                product.getProductCode() != null ? truncateString(product.getProductCode(), 14) : "N/A",
+                truncateString(product.getCategory(), 14),
+                product.getUnitPrice(),
+                product.getStockQuantity(),
+                product.getReorderLevel(),
+                product.getSupplierName() != null ? truncateString(product.getSupplierName(), 19) : "N/A");
+        }
+    }
+    
+    /**
+     * Truncate string to specified length for table display
+     */
+    private String truncateString(String str, int maxLength) {
+        if (str == null) return "N/A";
+        if (str.length() <= maxLength) return str;
+        return str.substring(0, maxLength - 3) + "...";
     }
 
     private void cleanup() {

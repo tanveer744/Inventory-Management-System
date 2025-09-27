@@ -71,6 +71,29 @@ public interface ProductDAO extends BaseDAO<Product, Integer> {
     List<String> getAllCategories() throws SQLException;
     
     /**
+     * Get distinct categories (alias for getAllCategories)
+     * @return List of distinct categories
+     * @throws SQLException if database operation fails
+     */
+    List<String> getDistinctCategories() throws SQLException;
+    
+    /**
+     * Delete by ID (alias for BaseDAO delete method)
+     * @param id Primary key
+     * @return true if deleted successfully, false otherwise
+     * @throws SQLException if database operation fails
+     */
+    boolean deleteById(Integer id) throws SQLException;
+    
+    /**
+     * Check if exists by ID (alias for BaseDAO exists method)
+     * @param id Primary key
+     * @return true if entity exists, false otherwise
+     * @throws SQLException if database operation fails
+     */
+    boolean existsById(Integer id) throws SQLException;
+    
+    /**
      * Update stock quantity directly
      * @param productId Product ID
      * @param newQuantity New stock quantity

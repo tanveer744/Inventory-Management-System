@@ -331,7 +331,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 👥 Authors
 
-- **Shaik Tanveer Lohare** - *Initial work* - [YourGitHub](https://github.com/tanveer744)
+- **Shaik Tanveer Lohare** - *Initial work* - [GitHub](https://github.com/tanveer744)
 
 ## 🙏 Acknowledgments
 
